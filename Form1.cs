@@ -1,165 +1,150 @@
+using SixLabors.Fonts;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Drawing.Processing;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 using System.Data;
-using System.Windows.Forms;
-using AForge.Video.DirectShow;
-using Alturos.Yolo;
-using Alturos.Yolo.Model;
+using Yolov8Net;
+using Color = SixLabors.ImageSharp.Color;
+using Font = SixLabors.Fonts.Font;
+using Image = SixLabors.ImageSharp.Image;
+using PointF = SixLabors.ImageSharp.PointF;
 
 namespace WinFormsApp3
 {
     public partial class Form1 : Form
     {
+        private string PathImage { get; set; }
+        private string PathNet { get; set; }
+        private DataTable DataTable;
+
         public Form1()
         {
             InitializeComponent();
-            comboBox2.SelectedIndex = 0;
-            comboBox3.SelectedIndex = 0;
-            comboBox3.SelectedIndexChanged += comboBox3_SelectedIndexChanged;
+            comboBox2.SelectedIndex = 1;
             InitializeDataGridView();
+            InitializeCoordinatesLabel();
             pictureBox1.SizeMode = PictureBoxSizeMode.StretchImage;
-            pictureBox2.SizeMode = PictureBoxSizeMode.StretchImage;
+            pictureBox1.MouseMove += PictureBox1_MouseMove;
         }
-
-        private FilterInfoCollection CaptureDevices;
-        private VideoCaptureDevice videoSource;
-        private YoloWrapper yolo;
-        int frameCount = 0;
-        int count = 0;
-        int countX;
-        string pathNet;
-        List<YoloItem> _items;
-
-        private void button1_Click(object sender, EventArgs e)
+        private void PictureBox1_MouseMove(object sender, MouseEventArgs e)
         {
-            videoSource = new VideoCaptureDevice(CaptureDevices[comboBox1.SelectedIndex].MonikerString);
-            videoSource.NewFrame += videoSource_NewFrame;
-            videoSource.Start();
-        }
-        private void videoSource_NewFrame(object sender, AForge.Video.NewFrameEventArgs eventArgs)
-        {
-            Bitmap img = (Bitmap)eventArgs.Frame.Clone();
-            pictureBox1.Image = img;
-            if (frameCount == count)
+            if (pictureBox1.Image != null)
             {
-                count += countX;
-                CNN_detection(img);
-            }
-            frameCount++;
-        }
-        private void CNN_detection(Image img)
-        {
-               var img2 = img;
-               pictureBox2.Image = img2;
-               var configurationDetector = new YoloConfigurationDetector();
-               var config = configurationDetector.Detect(pathNet);
-               yolo = new YoloWrapper(config);
-               var memoryStream = new MemoryStream();
-               pictureBox2.Image.Save(memoryStream, System.Drawing.Imaging.ImageFormat.Png);
-               _items = yolo.Detect(memoryStream.ToArray()).ToList();
-               AddDetailsToPictureBox(pictureBox2, _items);
-
-               if (_items.Count != 0)
-               {
-                ResetSource();
-                GetSource(_items);
-               }
-               else
-               {
-                ResetSource();
-               }
-        }
-        private void ResetSource()
-        {
-            for (int i = 0; i < 6; i++)
-            {
-                for (int j = 0; j < 6; j++)
-                {
-                    dataGridView1.Rows[i].Cells[j].Value = "";
-                }
+                var x = e.X * pictureBox1.Image.Width / pictureBox1.ClientSize.Width;
+                var y = e.Y * pictureBox1.Image.Height / pictureBox1.ClientSize.Height;
+                coordLabel.Text = $"Coordinates: X: {x}, Y: {y}";
             }
         }
 
-        private void GetSource(List<YoloItem> _items)
+        private void InitializeCoordinatesLabel()
         {
-            for (int i = 0; i < _items.Count; i++)
+            coordLabel.AutoSize = true;
+            this.Controls.Add(coordLabel);
+        }
+
+        private async void detectBtn_Click(object sender, EventArgs e)
+        {
+            await DetectYolov8();
+            sizeDGV(dataGridView1);
+        }
+
+        public async Task DetectYolov8()
+        {
+            string[] labels = new[] { "ship" };
+            using var yolo = YoloV8Predictor.Create(PathNet, labels);
+
+            using var image = await Image.LoadAsync<Rgba32>(PathImage);
+
+            var predictions = yolo.Predict(image);
+
+            foreach (var prediction in predictions)
             {
-                    dataGridView1.Rows[i].Cells[0].Value = _items[i].Type;
-                    dataGridView1.Rows[i].Cells[1].Value = Math.Round(_items[i].Confidence,3);
-                    dataGridView1.Rows[i].Cells[2].Value = _items[i].X;
-                    dataGridView1.Rows[i].Cells[3].Value = _items[i].Y;
-                    dataGridView1.Rows[i].Cells[4].Value = _items[i].Width;
-                    dataGridView1.Rows[i].Cells[5].Value = _items[i].Height;
+                var font = new Font(new FontCollection().Add("C:/Windows/Fonts/consola.ttf"), 16);
+                var score = Math.Round(prediction.Score, 2);
+
+                var (x, y) = (prediction.Rectangle.Left - 3, prediction.Rectangle.Top - 23);
+
+                DataRow row = DataTable.NewRow();
+                row["Type"] = prediction.Label.Name;
+                row["Confidence"] = score;
+                row["X"] = prediction.Rectangle.X;
+                row["Y"] = prediction.Rectangle.Y;
+                DataTable.Rows.Add(row);
+
+                image.Mutate(a => a.DrawPolygon(new SolidPen(Color.Red, 3),
+                    new PointF(prediction.Rectangle.Left, prediction.Rectangle.Top),
+                    new PointF(prediction.Rectangle.Right, prediction.Rectangle.Top),
+                    new PointF(prediction.Rectangle.Right, prediction.Rectangle.Bottom),
+                    new PointF(prediction.Rectangle.Left, prediction.Rectangle.Bottom)
+                ));
+
+                image.Mutate(a => a.DrawText($"{prediction.Label.Name} ({score})",
+                    font, Color.Green, new PointF(x, y)));
+
             }
+
+            await image.SaveAsync("../../../Assets/result.jpg");
+            pictureBox1.Image = System.Drawing.Image.FromFile("../../../Assets/result.jpg");
+        }
+
+        void sizeDGV(DataGridView dgv)
+        {
+            DataGridViewElementStates states = DataGridViewElementStates.None;
+            dgv.ScrollBars = ScrollBars.None;
+            var totalHeight = dgv.Rows.GetRowsHeight(states) + dgv.ColumnHeadersHeight;
+            totalHeight += dgv.Rows.Count * 4;
+            var totalWidth = dgv.Columns.GetColumnsWidth(states) + dgv.RowHeadersWidth;
+            dgv.ClientSize = new System.Drawing.Size(totalWidth, totalHeight);
         }
 
         private void InitializeDataGridView()
         {
-            dataGridView1.ColumnCount = 6;
-            dataGridView1.RowCount = 7;
+            DataTable = new DataTable();
+            DataTable.Columns.Add("Type");
+            DataTable.Columns.Add("Confidence");
+            DataTable.Columns.Add("X");
+            DataTable.Columns.Add("Y");
+
             dataGridView1.ColumnHeadersVisible = true;
             dataGridView1.AutoSize = true;
             DataGridViewCellStyle columnHeaderStyle = new DataGridViewCellStyle();
-            columnHeaderStyle.BackColor = Color.Beige;
-            columnHeaderStyle.Font = new Font("Arial", 9, FontStyle.Bold);
             dataGridView1.ColumnHeadersDefaultCellStyle = columnHeaderStyle;
-            dataGridView1.Columns[0].Name = "Type";
-            dataGridView1.Columns[1].Name = "Confidence";
-            dataGridView1.Columns[2].Name = "X";
-            dataGridView1.Columns[3].Name = "Y";
-            dataGridView1.Columns[4].Name = "Width";
-            dataGridView1.Columns[5].Name = "Height";
+            dataGridView1.DataSource = DataTable;
         }
 
-        private void AddDetailsToPictureBox(PictureBox pictureBoxToRender, List<YoloItem> items)
+
+        private void comboBox2_SelectedIndexChanged(object sender, EventArgs e)
         {
-            var img = pictureBoxToRender.Image;
-            var font = new Font("Arial", 18, FontStyle.Bold);
-            var brush = new SolidBrush(Color.Red);
-            var graphics = Graphics.FromImage(img);
-            
-            foreach (YoloItem item in items)
-                 {
-                     var x = item.X;
-                     var y = item.Y;
-                     var width = item.Width;
-                     var height = item.Height;
-                     var tung = item.Type;
-                     var confid = item.Confidence;
-                     var rect = new Rectangle(x, y, width, height);
-                     var pen = new Pen(Color.LightGreen, 2);
-                     var point = new Point(x, y);
-                     graphics.DrawRectangle(pen, rect);
-                     graphics.DrawString(item.Type, font, brush, point);
+            PathNet = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.FullName + "\\Assets\\" + comboBox2.Text + "\\" + "best.onnx";
+        }
+
+        private void selectBtn_Click(object sender, EventArgs e)
+        {
+            using (OpenFileDialog openFileDialog = new OpenFileDialog())
+            {
+                openFileDialog.InitialDirectory = "c:\\";
+                openFileDialog.Filter = "Image Files|*.jpg;*.jpeg;*.png;*.bmp;*.gif";
+                openFileDialog.FilterIndex = 1;
+                openFileDialog.RestoreDirectory = true;
+
+                if (openFileDialog.ShowDialog() == DialogResult.OK)
+                {
+                    PathImage = openFileDialog.FileName;
+                    pictureBox1.Image = System.Drawing.Image.FromFile(PathImage);
+                }
             }
-            pictureBoxToRender.Image = img;
         }
 
         private void Form1_Load(object sender, EventArgs e)
         {
-            CaptureDevices = new FilterInfoCollection(FilterCategory.VideoInputDevice);
-            foreach (FilterInfo Device in CaptureDevices)
-            {
-                comboBox1.Items.Add(Device.Name);
-            }
-            comboBox1.SelectedIndex = 0;
-            videoSource = new VideoCaptureDevice();
+
         }
 
-        private void button2_Click(object sender, EventArgs e)
+        private void pictureBox1_Click(object sender, EventArgs e)
         {
-            if (videoSource.IsRunning)
-            {
-                videoSource.Stop();
-            }
-        }
-        private void comboBox2_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            pathNet = Directory.GetCurrentDirectory() + "\\networks\\" + comboBox2.Text +"\\";
-        }
 
-        private void comboBox3_SelectedIndexChanged(object sender, EventArgs e)
-        {
-            string selectedCount = comboBox3.SelectedItem.ToString();
-            countX = Convert.ToInt32(selectedCount);
         }
     }
 }
+
