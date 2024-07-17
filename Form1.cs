@@ -4,6 +4,7 @@ using SixLabors.ImageSharp.Drawing.Processing;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 using System.Data;
+using System.Diagnostics;
 using Yolov8Net;
 using Color = SixLabors.ImageSharp.Color;
 using Font = SixLabors.Fonts.Font;
@@ -45,42 +46,94 @@ namespace WinFormsApp3
 
         private async void detectBtn_Click(object sender, EventArgs e)
         {
-            await DetectYolov8();
+            Detect();
+            DrawBBAsync();
             sizeDGV(dataGridView1);
         }
-
-        public async Task DetectYolov8()
+        private void Detect()
         {
-            string[] labels = new[] { "ship" };
-            using var yolo = YoloV8Predictor.Create(PathNet, labels);
+            if (comboBox2.SelectedIndex == 1)
+            {
+                return;
+            }
 
+        }
+
+        private async Task DrawBBAsync()
+        {
+            DataTable.Rows.Clear();
             using var image = await Image.LoadAsync<Rgba32>(PathImage);
+            string filePath = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.FullName + "\\coord.txt";
 
-            var predictions = yolo.Predict(image);
+            // Check if the file exists
+            if (!File.Exists(filePath))
+            {
+                Console.WriteLine("File not found.");
+                return;
+            }
 
-            foreach (var prediction in predictions)
+            // Read all lines from the file
+            string[] lines = File.ReadAllLines(filePath);
+
+            // List to store parsed coordinates
+            List<BoundingBox> boundingBoxes = new List<BoundingBox>();
+
+            // Parse each line
+            foreach (var line in lines)
+            {
+                // Split the line into parts
+                string[] parts = line.Split(' ');
+
+                if (parts.Length == 6)
+                {
+                    string className = parts[0];
+                    float confidence;
+                    int x1, y1, x2, y2;
+
+                    // Parse the values
+                    if (float.TryParse(parts[1], out confidence) &&
+                        int.TryParse(parts[2], out x1) &&
+                        int.TryParse(parts[3], out y1) &&
+                        int.TryParse(parts[4], out x2) &&
+                        int.TryParse(parts[5], out y2))
+                    {
+                        // Create a BoundingBox object and add it to the list
+                        boundingBoxes.Add(new BoundingBox
+                        {
+                            ClassName = className,
+                            Confidence = confidence,
+                            X1 = x1,
+                            Y1 = y1,
+                            X2 = x2,
+                            Y2 = y2
+                        });
+                    }
+                }
+            }
+
+            // Process the bounding boxes as needed
+            foreach (var box in boundingBoxes)
             {
                 var font = new Font(new FontCollection().Add("C:/Windows/Fonts/consola.ttf"), 16);
-                var score = Math.Round(prediction.Score, 2);
-
-                var (x, y) = (prediction.Rectangle.Left - 3, prediction.Rectangle.Top - 23);
-
+                var (x, y) = (box.X1 - 3, box.Y1 - 23);
                 DataRow row = DataTable.NewRow();
-                row["Type"] = prediction.Label.Name;
-                row["Confidence"] = score;
-                row["X"] = prediction.Rectangle.X;
-                row["Y"] = prediction.Rectangle.Y;
+                row["Type"] = "ship";
+                row["Confidence"] = box.Confidence;
+                row["X1"] = box.X1;
+                row["Y1"] = box.Y1;
+                row["X2"] = box.X2;
+                row["Y2"] = box.Y2;
                 DataTable.Rows.Add(row);
 
                 image.Mutate(a => a.DrawPolygon(new SolidPen(Color.Red, 3),
-                    new PointF(prediction.Rectangle.Left, prediction.Rectangle.Top),
-                    new PointF(prediction.Rectangle.Right, prediction.Rectangle.Top),
-                    new PointF(prediction.Rectangle.Right, prediction.Rectangle.Bottom),
-                    new PointF(prediction.Rectangle.Left, prediction.Rectangle.Bottom)
+                    new PointF(box.X1, box.Y1),
+                    new PointF(box.X2, box.Y1),
+                    new PointF(box.X2, box.Y2),
+                    new PointF(box.X1, box.Y2)
                 ));
 
-                image.Mutate(a => a.DrawText($"{prediction.Label.Name} ({score})",
-                    font, Color.Green, new PointF(x, y)));
+                image.Mutate(a => a.DrawText($"ship: ({box.Confidence})",
+                    font, Color.Red, new PointF(x, y)));
 
             }
 
@@ -103,8 +156,10 @@ namespace WinFormsApp3
             DataTable = new DataTable();
             DataTable.Columns.Add("Type");
             DataTable.Columns.Add("Confidence");
-            DataTable.Columns.Add("X");
-            DataTable.Columns.Add("Y");
+            DataTable.Columns.Add("X1");
+            DataTable.Columns.Add("Y1");
+            DataTable.Columns.Add("X2");
+            DataTable.Columns.Add("Y2");
 
             dataGridView1.ColumnHeadersVisible = true;
             dataGridView1.AutoSize = true;
@@ -121,6 +176,8 @@ namespace WinFormsApp3
 
         private void selectBtn_Click(object sender, EventArgs e)
         {
+            DataTable.Rows.Clear();
+
             using (OpenFileDialog openFileDialog = new OpenFileDialog())
             {
                 openFileDialog.InitialDirectory = "c:\\";
