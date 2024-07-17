@@ -47,7 +47,6 @@ namespace WinFormsApp3
         private async void detectBtn_Click(object sender, EventArgs e)
         {
             Detect();
-            // await DrawBBAsync();
             sizeDGV(dataGridView1);
         }
         private void Detect()
@@ -61,27 +60,22 @@ namespace WinFormsApp3
         }
         private void runCommand(string version)
         {
-            // Path to your Python script
             string pythonScriptPath = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.FullName + $"\\script{version}.py";
 
-            // Create new process start info
             ProcessStartInfo startInfo = new ProcessStartInfo();
-            startInfo.FileName = "C:\\Users\\opria\\miniconda3\\python.exe"; // Specify path to Python executable
-            startInfo.Arguments = pythonScriptPath; // Specify path to Python script
+            startInfo.FileName = "C:\\Users\\opria\\miniconda3\\python.exe"; 
+            startInfo.Arguments = pythonScriptPath;
             startInfo.UseShellExecute = false;
             startInfo.RedirectStandardOutput = true;
             startInfo.RedirectStandardError = true;
             startInfo.CreateNoWindow = true;
 
-            // Create new process
             using (Process process = new Process())
             {
                 process.StartInfo = startInfo;
 
-                // Start the process
                 process.Start();
 
-                // Read standard output and standard error
                 string output = process.StandardOutput.ReadToEnd();
                 string error = process.StandardError.ReadToEnd();
 
@@ -89,7 +83,6 @@ namespace WinFormsApp3
                 log.Text += error;
 
                 DrawBB(output);
-                // Wait for process to exit
                 process.WaitForExit();
 
             }
@@ -97,20 +90,15 @@ namespace WinFormsApp3
 
         private void DrawBB(string feed)
         {
-            // Split the string into lines
             string[] lines = feed.Split(new[] { Environment.NewLine }, StringSplitOptions.None);
 
-            // Use LINQ to filter lines that start with 'ship'
             var shipLines = lines.Where(line => line.StartsWith("ship"));
 
-            // List to store parsed coordinates
             List<BoundingBox> boundingBoxes = new List<BoundingBox>();
             using var image = Image.Load<Rgba32>(PathImage);
 
-            // Parse each line
             foreach (var line in shipLines)
             {
-                // Split the line into parts
                 string[] parts = line.Split(' ');
 
                 if (parts.Length == 6)
@@ -119,14 +107,12 @@ namespace WinFormsApp3
                     float confidence;
                     int x1, y1, x2, y2;
 
-                    // Parse the values
                     if (float.TryParse(parts[1], out confidence) &&
                         int.TryParse(parts[2], out x1) &&
                         int.TryParse(parts[3], out y1) &&
                         int.TryParse(parts[4], out x2) &&
                         int.TryParse(parts[5], out y2))
                     {
-                        // Create a BoundingBox object and add it to the list
                         boundingBoxes.Add(new BoundingBox
                         {
                             ClassName = className,
@@ -140,7 +126,6 @@ namespace WinFormsApp3
                 }
             }
 
-            // Process the bounding boxes as needed
             foreach (var box in boundingBoxes)
             {
                 var font = new Font(new FontCollection().Add("C:/Windows/Fonts/consola.ttf"), 16);
@@ -169,88 +154,7 @@ namespace WinFormsApp3
             image.Save("../../../Assets/result.jpg");
             pictureBox1.Image = System.Drawing.Image.FromFile("../../../Assets/result.jpg");
         }
-        /*private async Task DrawBBAsync()
-        {
-            DataTable.Rows.Clear();
-            using var image = await Image.LoadAsync<Rgba32>(PathImage);
-            string filePath = Directory.GetParent(Directory.GetCurrentDirectory()).Parent.Parent.FullName + "\\coord.txt";
 
-            // Check if the file exists
-            if (!File.Exists(filePath))
-            {
-                Console.WriteLine("File not found.");
-                return;
-            }
-
-            // Read all lines from the file
-            string[] lines = File.ReadAllLines(filePath);
-
-            // List to store parsed coordinates
-            List<BoundingBox> boundingBoxes = new List<BoundingBox>();
-
-            // Parse each line
-            foreach (var line in lines)
-            {
-                // Split the line into parts
-                string[] parts = line.Split(' ');
-
-                if (parts.Length == 6)
-                {
-                    string className = parts[0];
-                    float confidence;
-                    int x1, y1, x2, y2;
-
-                    // Parse the values
-                    if (float.TryParse(parts[1], out confidence) &&
-                        int.TryParse(parts[2], out x1) &&
-                        int.TryParse(parts[3], out y1) &&
-                        int.TryParse(parts[4], out x2) &&
-                        int.TryParse(parts[5], out y2))
-                    {
-                        // Create a BoundingBox object and add it to the list
-                        boundingBoxes.Add(new BoundingBox
-                        {
-                            ClassName = className,
-                            Confidence = confidence,
-                            X1 = x1,
-                            Y1 = y1,
-                            X2 = x2,
-                            Y2 = y2
-                        });
-                    }
-                }
-            }
-
-            // Process the bounding boxes as needed
-            foreach (var box in boundingBoxes)
-            {
-                var font = new Font(new FontCollection().Add("C:/Windows/Fonts/consola.ttf"), 16);
-                var (x, y) = (box.X1 - 3, box.Y1 - 23);
-                DataRow row = DataTable.NewRow();
-                row["Type"] = "ship";
-                row["Confidence"] = box.Confidence;
-                row["X1"] = box.X1;
-                row["Y1"] = box.Y1;
-                row["X2"] = box.X2;
-                row["Y2"] = box.Y2;
-                DataTable.Rows.Add(row);
-
-                image.Mutate(a => a.DrawPolygon(new SolidPen(Color.Red, 3),
-                    new PointF(box.X1, box.Y1),
-                    new PointF(box.X2, box.Y1),
-                    new PointF(box.X2, box.Y2),
-                    new PointF(box.X1, box.Y2)
-                ));
-
-                image.Mutate(a => a.DrawText($"ship: ({box.Confidence})",
-                    font, Color.Red, new PointF(x, y)));
-
-            }
-
-            await image.SaveAsync("../../../Assets/result.jpg");
-            pictureBox1.Image = System.Drawing.Image.FromFile("../../../Assets/result.jpg");
-        }
-*/
         void sizeDGV(DataGridView dgv)
         {
             DataGridViewElementStates states = DataGridViewElementStates.None;
